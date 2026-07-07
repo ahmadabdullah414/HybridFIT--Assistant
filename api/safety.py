@@ -103,7 +103,7 @@ ENGLISH_ONLY_REDIRECT = (
 )
 BOT_IDENTITY_REDIRECT = (
     "I'm HybridFit Assistant, an AI fitness coach built by Muhammad Junaid for the HybridFit "
-    "app -- not Junaid himself. How can I help with your training today?"
+    "app. How can I help you today?"
 )
 PERSONAL_INFO_REDIRECT = (
     f"I don't have that information to share. For anything else, you can reach out at {OWNER_CONTACT_EMAIL}."
