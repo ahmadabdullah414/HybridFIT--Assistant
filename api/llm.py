@@ -37,7 +37,14 @@ _NON_LATIN_LEAK = re.compile(r"[一-鿿぀-ヿ가-퟿؀-ۿऀ-ॿ]")
 
 MAX_GENERATION_RETRIES = 2  # two retries (three attempts total)
 MAX_HISTORY_MESSAGES = 6
-MAX_TOKENS = 512
+# Lower than the on-device Dart version's 512 — that runs natively with no
+# outer timeout, but this server sits behind Hugging Face's own gateway,
+# which has an upstream timeout. An open-ended prompt like a plain "hello"
+# was observed generating for 80+ seconds on the free CPU tier and getting
+# cut off by the gateway (HTTP 500) before finishing. Capping the budget
+# here bounds worst-case latency instead of relying on the model to stop
+# itself early, which it doesn't reliably do.
+MAX_TOKENS = 200
 
 
 class ChatTurn:
@@ -54,7 +61,12 @@ class LlamaChatService:
     across requests."""
 
     def __init__(self, model_path: str):
-        self._llm = Llama(model_path=model_path, n_ctx=4096, n_gpu_layers=0, verbose=False)
+        # n_threads pinned to match Hugging Face's "cpu-basic" free tier (2
+        # vCPUs) explicitly, rather than trusting auto-detection — a
+        # container can report the host's full core count even when its
+        # actual CPU quota is much smaller, causing thread oversubscription
+        # that slows generation down instead of speeding it up.
+        self._llm = Llama(model_path=model_path, n_ctx=4096, n_gpu_layers=0, n_threads=2, verbose=False)
 
     def _build_prompt(self, history: list[ChatTurn], user_message: str) -> str:
         parts = [f"<|im_start|>system\n{SYSTEM_PROMPT}<|im_end|>\n"]
