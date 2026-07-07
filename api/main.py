@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 
 from llm import ChatTurn, LlamaChatService
 from nlu import IntentClassifier, LanguageDetector
-from safety import safety_check
+from safety import BOT_IDENTITY_REDIRECT, is_false_identity_claim, safety_check
 
 _BASE = os.path.dirname(os.path.abspath(__file__))
 _NLU_DIR = os.path.join(_BASE, "..", "flutter", "nlu")
@@ -91,4 +91,10 @@ def chat(request: ChatRequest, x_api_key: str | None = Header(default=None)) -> 
 
     history = [ChatTurn(t.role, t.content) for t in request.history]
     reply = _chat_service.generate_reply(history, message)
+    # Defense in depth: bot_identity is already hard-gated above, but this
+    # small fine-tuned model has volunteered "I'm Junaid" unprompted even on
+    # a plain "hello" (intent misclassified as something else) — catch it on
+    # the actual output too rather than trusting the intent gate alone.
+    if is_false_identity_claim(reply):
+        reply = BOT_IDENTITY_REDIRECT
     return ChatResponse(reply=reply)

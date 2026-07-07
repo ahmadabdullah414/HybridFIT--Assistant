@@ -86,10 +86,24 @@ _ABUSIVE_PATTERNS = [
     re.compile(r"\bharaam(zada|i)\b", re.IGNORECASE),
 ]
 
+# Catches the model claiming to *be* Junaid instead of an AI he built —
+# a small fine-tuned model's persona adherence is unreliable even with an
+# explicit system prompt saying "you are an AI, not Muhammad Junaid
+# himself", so this is checked post-generation too (see is_false_identity_claim)
+# rather than trusted to the prompt alone.
+_FALSE_IDENTITY_CLAIM = re.compile(
+    r"\b(i'?m|i am|this is|it'?s|it is|my name is)\s+(muhammad\s+)?junaid\b|\bjunaid\s+here\b",
+    re.IGNORECASE,
+)
+
 OWNER_CONTACT_EMAIL = "hybridstrengthnfitness@gmail.com"
 
 ENGLISH_ONLY_REDIRECT = (
     "I can only understand English right now. Please type your message in English and I'll be happy to help."
+)
+BOT_IDENTITY_REDIRECT = (
+    "I'm HybridFit Assistant, an AI fitness coach built by Muhammad Junaid for the HybridFit "
+    "app -- not Junaid himself. How can I help with your training today?"
 )
 PERSONAL_INFO_REDIRECT = (
     f"I don't have that information to share. For anything else, you can reach out at {OWNER_CONTACT_EMAIL}."
@@ -114,6 +128,14 @@ def is_medical(normalized_text: str) -> bool:
     return any(kw in normalized_text for kw in MEDICAL_KEYWORDS)
 
 
+def is_false_identity_claim(reply_text: str) -> bool:
+    """True if a generated reply claims the bot *is* Junaid rather than an
+    AI he built — checked against the LLM's actual output (not just the
+    user's message) since this specific small model volunteers this even
+    on plain greetings, unprompted."""
+    return bool(_FALSE_IDENTITY_CLAIM.search(reply_text))
+
+
 def safety_check(text: str, *, is_roman_urdu: bool, intent: str) -> str | None:
     """Returns the fixed redirect string if text should never reach the
     LLM, or None if it's safe to generate.
@@ -125,12 +147,20 @@ def safety_check(text: str, *, is_roman_urdu: bool, intent: str) -> str | None:
     bias, so it's 100% reliable regardless of what the LLM itself would
     have done.
 
+    `bot_identity` is also hard-gated to a fixed answer for the same
+    reason — the model's own sense of "am I an AI or the real Junaid" is
+    unreliable (see is_false_identity_claim for the complementary
+    post-generation check, which catches this even when the intent
+    classifier doesn't flag it, e.g. on a plain "hello").
+
     Off-topic detection uses BOTH the keyword list AND the intent
     classifier's `off_topic_redirect` prediction — never an allow-list
     requiring a fitness keyword on every message.
     """
     if is_roman_urdu:
         return ENGLISH_ONLY_REDIRECT
+    if intent == "bot_identity":
+        return BOT_IDENTITY_REDIRECT
 
     normalized = normalize_for_matching(text)
     if any(kw in normalized for kw in PERSONAL_INFO_KEYWORDS):
